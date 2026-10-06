@@ -31,12 +31,14 @@ class SocialStreamInstance extends InstanceBase {
 	async destroy() {
 		this.states = {}
 
-		if (this.ws !== undefined) {
-			this.ws.close(1000)
-			delete this.ws
+		const ws = this.ws
+		delete this.ws
+		if (ws !== undefined) {
+			ws.close(1000)
 		}
 		if (this.reconnect) {
 			clearInterval(this.reconnect)
+			delete this.reconnect
 		}
 	}
 
@@ -55,6 +57,7 @@ class SocialStreamInstance extends InstanceBase {
 		this.config = config
 		if (this.reconnect) {
 			clearInterval(this.reconnect)
+			delete this.reconnect
 		}
 		this.initWebSocket()
 	}
@@ -82,16 +85,19 @@ class SocialStreamInstance extends InstanceBase {
 	initWebSocket() {
 		if (this.reconnect) {
 			clearInterval(this.reconnect)
+			delete this.reconnect
+		}
+		const previousWs = this.ws
+		delete this.ws
+		if (previousWs !== undefined) {
+			previousWs.close(1000)
 		}
 		if (this.config.sessionID) {
-			if (this.ws !== undefined) {
-				this.ws.close(1000)
-				delete this.ws
-			}
+			const ws = new WebSocket(`wss://io.socialstream.ninja:443`)
+			this.ws = ws
 
-			this.ws = new WebSocket(`wss://io.socialstream.ninja:443`)
-
-			this.ws.on('open', () => {
+			ws.on('open', () => {
+				if (this.ws !== ws) return
 				if (!this.connected) {
 					this.log('info', `Connection opened to SocialStream.Ninja`)
 					this.connected = true
@@ -101,19 +107,25 @@ class SocialStreamInstance extends InstanceBase {
 				this.sendRequest('getQueueSize')
 			})
 
-			this.ws.on('close', (code) => {
+			ws.on('close', (code) => {
+				if (this.ws !== ws) return
 				if (code !== 1000 && code !== 1006) {
 					this.connected = false
 					this.log('debug', `Websocket closed:  ${code}`)
 				}
 				this.reconnect = setInterval(() => {
+					if (this.ws !== ws) return
 					this.initWebSocket()
 				}, 1000)
 			})
 
-			this.ws.on('message', this.messageReceivedFromWebSocket.bind(this))
+			ws.on('message', (data) => {
+				if (this.ws !== ws) return
+				this.messageReceivedFromWebSocket(data)
+			})
 
-			this.ws.on('error', (data) => {
+			ws.on('error', (data) => {
+				if (this.ws !== ws) return
 				if (this.connected !== false) {
 					this.connected = false
 					this.updateStatus(InstanceStatus.ConnectionFailure)
